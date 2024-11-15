@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "922390371660",
+    "project_id": "unichat-8e5c4",
+    "storage_bucket": "unichat-8e5c4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:922390371660:android:bdb6b5627bc2b7b0d303e9",
+        "android_client_info": {
+          "package_name": "com.example.unichat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCthAWVGcn7pk9bCXIArauJEO2jVv34zmU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
