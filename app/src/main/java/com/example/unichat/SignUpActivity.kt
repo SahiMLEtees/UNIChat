@@ -154,7 +154,7 @@ class SignUpActivity : ComponentActivity() {
                     onClick = { signInWithGoogle() },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Sign Up with Google")
+                    Text("Google")
                 }
             }
         }
