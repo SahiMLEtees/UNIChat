@@ -125,7 +125,7 @@ fun LoginScreen() {
                 if (isLoading) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
                 } else {
-                    Text("Login")
+                    Text("Login Account ")
                 }
             }
 
