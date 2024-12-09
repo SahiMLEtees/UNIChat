@@ -24,49 +24,93 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.unichat.ui.theme.UNIChatTheme
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.GoogleAuthProvider
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 
 import com.example.unichat.SignUpActivity
-import com.example.unichat.MainActivity // Assuming MainActivity is the next screen
+import com.example.unichat.HomeActivity // Updated to HomeActivity
 
 class LoginActivity : ComponentActivity() {
+    private lateinit var auth: FirebaseAuth
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        auth = FirebaseAuth.getInstance()
+
         setContent {
             UNIChatTheme {
-                LoginScreen()
+                LoginScreen(auth)
             }
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        // Handle Google Sign-In result
+        if (requestCode == 100) { // Google Sign-In request code
+            val task = GoogleSignIn.getSignedInAccountFromIntent(data)
+            try {
+                val account = task.getResult(ApiException::class.java)
+                firebaseAuthWithGoogle(account)
+            } catch (e: ApiException) {
+                Toast.makeText(this, "Google Sign-In failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun firebaseAuthWithGoogle(account: GoogleSignInAccount?) {
+        if (account == null) return
+
+        val credential = GoogleAuthProvider.getCredential(account.idToken, null)
+        auth.signInWithCredential(credential)
+            .addOnCompleteListener(this) { task ->
+                if (task.isSuccessful) {
+                    val user = auth.currentUser
+                    navigateToMain(user)
+                } else {
+                    Toast.makeText(this, "Google Sign-In failed", Toast.LENGTH_SHORT).show()
+                }
+            }
+    }
+
+    private fun navigateToMain(user: FirebaseUser?) {
+        if (user != null) {
+            val intent = Intent(this, HomeActivity::class.java) // Navigate to HomeActivity
+            startActivity(intent)
+            finish()
         }
     }
 }
 
 @Composable
-fun LoginScreen() {
+fun LoginScreen(auth: FirebaseAuth) {
     // States for email, password, loading status, and password visibility
     var email by remember { mutableStateOf(TextFieldValue("")) }
     var password by remember { mutableStateOf(TextFieldValue("")) }
     var isLoading by remember { mutableStateOf(false) }
     var passwordVisible by remember { mutableStateOf(false) }
 
-    // Firebase authentication instance
     val context = LocalContext.current
-    val auth = FirebaseAuth.getInstance()
 
-    // Login UI with background image
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
         // Background image
-        val background: Painter = painterResource(id = R.drawable.background) // Replace with your actual background image name
+        val background: Painter = painterResource(id = R.drawable.background)
         Image(
             painter = background,
             contentDescription = "Background",
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
-            alpha = 0.3f // Adjust transparency as needed
+            alpha = 0.3f
         )
 
-        // Foreground login content
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -74,8 +118,8 @@ fun LoginScreen() {
                 .padding(16.dp)
                 .fillMaxWidth()
         ) {
-            // Logo above email input
-            val logoImage: Painter = painterResource(id = R.drawable.logo) // Replace with your actual logo image name
+            // Logo
+            val logoImage: Painter = painterResource(id = R.drawable.logo)
             Image(
                 painter = logoImage,
                 contentDescription = "App Logo",
@@ -111,7 +155,7 @@ fun LoginScreen() {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Login button with loading state
+            // Login button
             Button(
                 onClick = {
                     isLoading = true
@@ -125,9 +169,25 @@ fun LoginScreen() {
                 if (isLoading) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
                 } else {
-                    Text("Login Account ")
+                    Text("Login Account")
                 }
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Or Text
+            Text("Or", style = MaterialTheme.typography.bodyMedium)
+
+            // Google Sign-In button
+            Button(
+                onClick = { startGoogleSignIn(context) },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(MaterialTheme.colorScheme.secondary)
+            ) {
+                Text("Sign in with Google")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Navigate to Sign Up screen
             TextButton(
@@ -143,7 +203,19 @@ fun LoginScreen() {
     }
 }
 
-// Function to sign in with email and navigate to the main screen on success
+fun startGoogleSignIn(context: android.content.Context) {
+    val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+        .requestIdToken(context.getString(R.string.default_web_client_id)) // Replace with your client ID
+        .requestEmail()
+        .build()
+
+    val client = GoogleSignIn.getClient(context, options)
+    val signInIntent = client.signInIntent
+    if (context is ComponentActivity) {
+        context.startActivityForResult(signInIntent, 100)
+    }
+}
+
 fun signInWithEmail(
     auth: FirebaseAuth,
     email: String,
@@ -156,8 +228,7 @@ fun signInWithEmail(
             onComplete()
             if (task.isSuccessful) {
                 Toast.makeText(context, "Login successful", Toast.LENGTH_SHORT).show()
-                // Navigate to the main chat screen (MainActivity)
-                val intent = Intent(context, MainActivity::class.java)
+                val intent = Intent(context, HomeActivity::class.java) // Navigate to HomeActivity
                 context.startActivity(intent)
             } else {
                 Toast.makeText(context, "Login failed: ${task.exception?.message}", Toast.LENGTH_SHORT).show()

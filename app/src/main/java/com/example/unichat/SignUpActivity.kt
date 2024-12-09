@@ -50,19 +50,11 @@ class SignUpActivity : ComponentActivity() {
 
         // Configure Google Sign-In
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken(getString(R.string.default_web_client_id)) // Your Web Client ID
+            .requestIdToken(getString(R.string.default_web_client_id)) // Replace with your Web Client ID
             .requestEmail()
             .build()
 
         googleSignInClient = GoogleSignIn.getClient(this, gso)
-    }
-
-    // Function to check network availability
-    fun isNetworkAvailable(context: Context): Boolean {
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivityManager.activeNetwork
-        val capabilities = connectivityManager.getNetworkCapabilities(network)
-        return capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     @Composable
@@ -76,13 +68,13 @@ class SignUpActivity : ComponentActivity() {
 
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             // Background Image
-            val background: Painter = painterResource(id = R.drawable.background) // Replace with your actual background image
+            val background: Painter = painterResource(id = R.drawable.background)
             Image(
                 painter = background,
                 contentDescription = "Background",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
-                alpha = 0.3f // Adjust transparency as needed
+                alpha = 0.3f
             )
 
             // Foreground content
@@ -94,7 +86,7 @@ class SignUpActivity : ComponentActivity() {
                     .fillMaxWidth()
             ) {
                 // Logo Image
-                val logoImage: Painter = painterResource(id = R.drawable.logo) // Replace with your actual logo image
+                val logoImage: Painter = painterResource(id = R.drawable.logo)
                 Image(
                     painter = logoImage,
                     contentDescription = "App Logo",
@@ -154,63 +146,78 @@ class SignUpActivity : ComponentActivity() {
                     onClick = { signInWithGoogle() },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Google")
+                    Text("Sign up with Google")
                 }
             }
         }
     }
 
-    // Function to sign up using email
-    private fun signUpWithEmail(auth: FirebaseAuth, email: String, password: String, confirmPassword: String, context: android.content.Context, onComplete: () -> Unit) {
-        if (password.isNotEmpty() && password == confirmPassword) {
-            auth.createUserWithEmailAndPassword(email, password)
-                .addOnCompleteListener { task ->
-                    onComplete()
-                    if (task.isSuccessful) {
-                        Toast.makeText(context, "Signup successful", Toast.LENGTH_SHORT).show()
-                        // TODO: Navigate to main chat screen or login
-                    } else {
-                        Toast.makeText(context, "Signup failed: ${task.exception?.message}", Toast.LENGTH_SHORT).show()
-                    }
-                }
-        } else {
-            Toast.makeText(context, "Passwords don't match!", Toast.LENGTH_SHORT).show()
+    // Email Sign-Up Function
+    private fun signUpWithEmail(
+        auth: FirebaseAuth,
+        email: String,
+        password: String,
+        confirmPassword: String,
+        context: Context,
+        onComplete: () -> Unit
+    ) {
+        if (password.isEmpty() || email.isEmpty()) {
+            Toast.makeText(context, "Email and password must not be empty", Toast.LENGTH_SHORT).show()
+            onComplete()
+            return
         }
+
+        if (password != confirmPassword) {
+            Toast.makeText(context, "Passwords don't match!", Toast.LENGTH_SHORT).show()
+            onComplete()
+            return
+        }
+
+        auth.createUserWithEmailAndPassword(email, password)
+            .addOnCompleteListener { task ->
+                onComplete()
+                if (task.isSuccessful) {
+                    Toast.makeText(context, "Signup successful", Toast.LENGTH_SHORT).show()
+                    val user = auth.currentUser
+                    Log.i("SignUpActivity", "User created: ${user?.email}")
+                } else {
+                    Toast.makeText(context, "Signup failed: ${task.exception?.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
     }
 
-    // Google Sign-in function
+    // Google Sign-In Function
     private fun signInWithGoogle() {
-        val signInIntent: Intent = googleSignInClient.signInIntent
+        val signInIntent = googleSignInClient.signInIntent
         startActivityForResult(signInIntent, RC_SIGN_IN)
     }
 
-    // Handle the result of Google Sign-in
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-
         if (requestCode == RC_SIGN_IN) {
             val task = GoogleSignIn.getSignedInAccountFromIntent(data)
-            try {
-                val account = task.getResult(ApiException::class.java)
-                account?.let {
-                    firebaseAuthWithGoogle(it)
-                }
-            } catch (e: ApiException) {
-                Log.w("Google SignIn", "Google sign-in failed", e)
-                Toast.makeText(this, "Google sign-in failed: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
+            handleGoogleSignInResult(task)
         }
     }
 
-    // Authenticate the Google account with Firebase
-    private fun firebaseAuthWithGoogle(account: GoogleSignInAccount) {
+    private fun handleGoogleSignInResult(completedTask: Task<GoogleSignInAccount>) {
+        try {
+            val account = completedTask.getResult(ApiException::class.java)
+            firebaseAuthWithGoogle(account)
+        } catch (e: ApiException) {
+            Log.e("SignUpActivity", "Google sign-in failed", e)
+            Toast.makeText(this, "Google sign-in failed: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun firebaseAuthWithGoogle(account: GoogleSignInAccount?) {
+        if (account == null) return
         val credential = GoogleAuthProvider.getCredential(account.idToken, null)
         auth.signInWithCredential(credential)
             .addOnCompleteListener(this) { task ->
                 if (task.isSuccessful) {
                     val user = auth.currentUser
-                    Toast.makeText(this, "Google sign-up successful: ${user?.displayName}", Toast.LENGTH_SHORT).show()
-                    // TODO: Navigate to main chat screen
+                    Toast.makeText(this, "Signup successful: ${user?.displayName}", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(this, "Google sign-up failed: ${task.exception?.message}", Toast.LENGTH_SHORT).show()
                 }
