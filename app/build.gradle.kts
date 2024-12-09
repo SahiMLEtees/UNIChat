@@ -4,6 +4,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     //id("com.android.application")
     id("com.google.gms.google-services")
+    id("com.google.devtools.ksp")
+
 }
 
 android {
@@ -42,9 +44,9 @@ android {
 }
 
 dependencies {
-    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
-    implementation("com.google.firebase:firebase-analytics")
-    implementation("androidx.compose.material:material-icons-extended:1.5.1")
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.analytics)
+    implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -62,13 +64,45 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
     // Firebase Authentication
-    implementation("com.google.firebase:firebase-auth")
-    implementation("com.google.firebase:firebase-auth-ktx")
-    implementation("com.google.android.gms:play-services-auth:20.1.0")
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.auth.ktx)
+    implementation(libs.play.services.auth)
 
     // Jetpack Compose and Material 3 dependencies
-    implementation("androidx.compose.material3:material3:1.1.0")
-    implementation("androidx.activity:activity-compose:1.7.2")
+    implementation(libs.material3)
+    implementation(libs.androidx.activity.compose.v172)
+
+    dependencies {
+        val room_version = "2.6.1"
+
+        implementation(libs.androidx.room.runtime)
+
+        // If this project uses any Kotlin source, use Kotlin Symbol Processing (KSP)
+        // See Add the KSP plugin to your project
+        ksp(libs.androidx.room.room.compiler)
+
+        // If this project only uses Java source, use the Java annotationProcessor
+        // No additional plugins are necessary
+        annotationProcessor(libs.androidx.room.room.compiler)
+
+        // optional - Kotlin Extensions and Coroutines support for Room
+        implementation(libs.androidx.room.ktx)
+
+        // optional - RxJava2 support for Room
+        implementation(libs.androidx.room.rxjava2)
+
+        // optional - RxJava3 support for Room
+        implementation(libs.androidx.room.rxjava3)
+
+        // optional - Guava support for Room, including Optional and ListenableFuture
+        implementation(libs.androidx.room.guava)
+
+        // optional - Test helpers
+        testImplementation(libs.androidx.room.testing)
+
+        // optional - Paging 3 Integration
+        implementation(libs.androidx.room.paging)
+    }
 
 
 

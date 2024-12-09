@@ -20,6 +20,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.unichat.ui.theme.UNIChatTheme
 import com.google.firebase.auth.FirebaseAuth
@@ -114,18 +115,65 @@ fun BottomNavigationBar(selectedTab: Int, onTabSelected: (Int) -> Unit) {
 
 @Composable
 fun ChatsScreen() {
-    Column(modifier = Modifier.fillMaxSize()) {
-        ChatList()
+    val chatItems = remember { listOf<String>() } // Empty list initially
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Button(
-            onClick = { /* Handle Add Contact click */ },
+    if (chatItems.isEmpty()) {
+        // No chats available
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Text("Add Contact")
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Chat,
+                    contentDescription = "No Chats",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(100.dp)
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "No chats yet",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Start a new chat or add a contact to begin.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(onClick = { /* Navigate to Add Contact or Start Chat */ }) {
+                    Text("Start a New Chat")
+                }
+            }
+        }
+    } else {
+        // Show chat items
+        LazyColumn(
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            items(chatItems.size) { index ->
+                ChatItem(name = chatItems[index])
+            }
         }
     }
 }
+
 
 @Composable
 fun TranslateScreen() {
@@ -194,10 +242,12 @@ fun ChatItem(name: String) {
 @Composable
 fun AddContactScreen() {
     var contactName by remember { mutableStateOf("") }
-    var contactEmail by remember { mutableStateOf("") }
+    var countryCode by remember { mutableStateOf("+1") } // Default country code
+    var phoneNumber by remember { mutableStateOf("") }
     val contactsList = remember { mutableStateListOf<Pair<String, String>>() }
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope() // CoroutineScope for launching snackbar
+    val countryCodes = listOf("+1", "+91", "+44", "+61", "+81") // Add more country codes as needed
 
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
@@ -225,36 +275,75 @@ fun AddContactScreen() {
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            OutlinedTextField(
-                value = contactEmail,
-                onValueChange = { contactEmail = it },
-                label = { Text("Contact Email") },
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
-            )
+            ) {
+                // Dropdown for country code
+                var expanded by remember { mutableStateOf(false) }
+                Box(
+                    modifier = Modifier
+                        .weight(0.3f) // Explicit weight for the Box
+                ) {
+                    OutlinedTextField(
+                        value = countryCode,
+                        onValueChange = {},
+                        label = { Text("Country Code") },
+                        enabled = false,
+                        modifier = Modifier
+                            .clickable { expanded = true }
+                    )
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        countryCodes.forEach { code ->
+                            DropdownMenuItem(
+                                text = { Text(code) },
+                                onClick = {
+                                    countryCode = code
+                                    expanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Phone number field
+                OutlinedTextField(
+                    value = phoneNumber,
+                    onValueChange = { phoneNumber = it },
+                    label = { Text("Phone Number") },
+                    modifier = Modifier.weight(0.7f) // Explicit weight for the OutlinedTextField
+                )
+            }
+
 
             Spacer(modifier = Modifier.height(16.dp))
 
             Button(
                 onClick = {
-                    if (contactName.isBlank() || contactEmail.isBlank()) {
+                    if (contactName.isBlank() || phoneNumber.isBlank()) {
                         // Show Snackbar when fields are empty
                         coroutineScope.launch {
                             snackbarHostState.showSnackbar("Please fill in both fields.")
                         }
-                    } else if (contactsList.any { it.second == contactEmail }) {
-                        // Show Snackbar when email already exists
+                    } else if (contactsList.any { it.second == "$countryCode $phoneNumber" }) {
+                        // Show Snackbar when phone number already exists
                         coroutineScope.launch {
-                            snackbarHostState.showSnackbar("Contact with this email already exists.")
+                            snackbarHostState.showSnackbar("Contact with this phone number already exists.")
                         }
                     } else {
                         // Add new contact and show success Snackbar
-                        contactsList.add(Pair(contactName, contactEmail))
+                        contactsList.add(Pair(contactName, "$countryCode $phoneNumber"))
                         coroutineScope.launch {
                             snackbarHostState.showSnackbar("Contact added successfully!")
                         }
                         // Reset the text fields
                         contactName = ""
-                        contactEmail = ""
+                        phoneNumber = ""
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -300,6 +389,7 @@ fun AddContactScreen() {
         }
     }
 }
+
 
 @Composable
 fun ContactCard(name: String, email: String) {
