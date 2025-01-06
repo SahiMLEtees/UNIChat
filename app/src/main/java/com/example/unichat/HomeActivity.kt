@@ -145,6 +145,7 @@ fun ChatsScreen(contactList: List<Contact>, firestore: FirebaseFirestore) {
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
+    // Load contacts from Firestore
     LaunchedEffect(Unit) {
         firestore.collection("contacts")
             .get()
@@ -166,6 +167,7 @@ fun ChatsScreen(contactList: List<Contact>, firestore: FirebaseFirestore) {
             }
     }
 
+    // Combine Room and Firestore contacts, avoiding duplicates
     val allContacts = (contactList + firestoreContacts).distinctBy { it.phoneNumber }
 
     Scaffold(
@@ -179,11 +181,13 @@ fun ChatsScreen(contactList: List<Contact>, firestore: FirebaseFirestore) {
                 .padding(innerPadding)
         ) {
             items(allContacts) { contact ->
-                ChatItem(name = contact.name)
+                ChatItem(name = contact.name, phoneNumber = contact.phoneNumber)
             }
         }
     }
 }
+
+
 
 
 
@@ -332,6 +336,8 @@ fun AddContactScreen(
     var contactName by remember { mutableStateOf("") }
     var countryCode by remember { mutableStateOf("+1") }
     var phoneNumber by remember { mutableStateOf("") }
+    var expanded by remember { mutableStateOf(false) } // State to control dropdown menu
+    val countryCodes = listOf("+1", "+91", "+44", "+61", "+81") // Sample country codes
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -361,13 +367,34 @@ fun AddContactScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedTextField(
-                    value = countryCode,
-                    onValueChange = {},
-                    label = { Text("Country Code") },
-                    enabled = false,
-                    modifier = Modifier.weight(0.3f).clickable { /* Dropdown logic */ }
-                )
+                Box(
+                    modifier = Modifier
+                        .weight(0.3f)
+                        .clickable { expanded = true } // Open dropdown on click
+                ) {
+                    OutlinedTextField(
+                        value = countryCode,
+                        onValueChange = {},
+                        label = { Text("Country Code") },
+                        enabled = false,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        countryCodes.forEach { code ->
+                            DropdownMenuItem(
+                                text = { Text(code) },
+                                onClick = {
+                                    countryCode = code // Update selected country code
+                                    expanded = false
+                                }
+                            )
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.width(8.dp))
 
@@ -389,19 +416,23 @@ fun AddContactScreen(
                         }
                     } else {
                         coroutineScope.launch {
+                            val fullPhoneNumber = "$countryCode $phoneNumber"
                             val newContact = Contact(
                                 name = contactName,
-                                phoneNumber = "$countryCode $phoneNumber"
+                                phoneNumber = fullPhoneNumber
                             )
+                            // Save to Room database
                             database.contactDao().insertContact(newContact)
                             onContactAdded(newContact)
 
                             // Save to Firestore
                             firestore.collection("contacts")
-                                .add(mapOf(
-                                    "name" to contactName,
-                                    "phoneNumber" to "$countryCode $phoneNumber"
-                                ))
+                                .add(
+                                    mapOf(
+                                        "name" to contactName,
+                                        "phoneNumber" to fullPhoneNumber
+                                    )
+                                )
                                 .addOnSuccessListener {
                                     Log.d("Firestore", "Contact added to Firestore")
                                 }
@@ -410,10 +441,11 @@ fun AddContactScreen(
                                 }
 
                             snackbarHostState.showSnackbar("Contact added successfully!")
-                        }
 
-                        contactName = ""
-                        phoneNumber = ""
+                            // Reset fields
+                            contactName = ""
+                            phoneNumber = ""
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -423,4 +455,6 @@ fun AddContactScreen(
         }
     }
 }
+
+
 
