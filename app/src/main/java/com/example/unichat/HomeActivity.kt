@@ -1,15 +1,13 @@
 package com.example.unichat
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Logout
@@ -22,23 +20,40 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.unichat.data.database.AppDatabase
+import com.example.unichat.data.entities.Contact
 import com.example.unichat.ui.theme.UNIChatTheme
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
 
 class HomeActivity : ComponentActivity() {
     private lateinit var auth: FirebaseAuth
+    private lateinit var database: AppDatabase
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         auth = FirebaseAuth.getInstance()
+        database = AppDatabase.getDatabase(this) // Initialize Room database
 
         setContent {
             UNIChatTheme {
+                var contactList by remember { mutableStateOf<List<Contact>>(emptyList()) }
+
+                // Load contacts from the database when the app starts
+                LaunchedEffect(Unit) {
+                    contactList = database.contactDao().getAllContacts()
+                    Log.d("HomeActivity", "Loaded contacts: $contactList") // Log the contacts to verify
+                }
+
                 HomeScreen(
                     onLogout = {
                         auth.signOut()
                         finish()
+                    },
+                    database = database,
+                    contactList = contactList,
+                    onContactAdded = { newContact ->
+                        contactList = contactList + newContact // Update the list when a contact is added
                     }
                 )
             }
@@ -46,10 +61,16 @@ class HomeActivity : ComponentActivity() {
     }
 }
 
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(onLogout: () -> Unit) {
-    var selectedTab by remember { mutableStateOf(0) }
+fun HomeScreen(
+    onLogout: () -> Unit,
+    database: AppDatabase,
+    contactList: List<Contact>,
+    onContactAdded: (Contact) -> Unit // This function will be used to update the contact list
+) {
+    var selectedTab by remember { mutableIntStateOf(0) }
 
     Scaffold(
         topBar = {
@@ -74,9 +95,9 @@ fun HomeScreen(onLogout: () -> Unit) {
     ) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding)) {
             when (selectedTab) {
-                0 -> ChatsScreen()
+                0 -> ChatsScreen(contactList) // Pass the contact list to the ChatsScreen
                 1 -> TranslateScreen()
-                2 -> AddContactScreen()
+                2 -> AddContactScreen(database, onContactAdded) // Pass onContactAdded callback to AddContactScreen
                 3 -> SettingsScreen()
             }
         }
@@ -84,41 +105,39 @@ fun HomeScreen(onLogout: () -> Unit) {
 }
 
 @Composable
-fun BottomNavigationBar(selectedTab: Int, onTabSelected: (Int) -> Unit) {
-    NavigationBar {
-        NavigationBarItem(
-            icon = { Icon(Icons.Default.Chat, contentDescription = "Chats") },
-            label = { Text("Chats") },
-            selected = selectedTab == 0,
-            onClick = { onTabSelected(0) }
-        )
-        NavigationBarItem(
-            icon = { Icon(Icons.Default.Translate, contentDescription = "Translate") },
-            label = { Text("Translate") },
-            selected = selectedTab == 1,
-            onClick = { onTabSelected(1) }
-        )
-        NavigationBarItem(
-            icon = { Icon(Icons.Default.PersonAdd, contentDescription = "Add Contact") },
-            label = { Text("Add Contact") },
-            selected = selectedTab == 2,
-            onClick = { onTabSelected(2) }
-        )
-        NavigationBarItem(
-            icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-            label = { Text("Settings") },
-            selected = selectedTab == 3,
-            onClick = { onTabSelected(3) }
-        )
+fun ChatItem(name: String) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { /* Handle click to open chat details */ },
+        elevation = CardDefaults.cardElevation(4.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Chat,
+                contentDescription = "Chat Icon",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(40.dp)
+            )
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Text(
+                text = name,
+                style = MaterialTheme.typography.titleMedium
+            )
+        }
     }
 }
 
-@Composable
-fun ChatsScreen() {
-    val chatItems = remember { listOf<String>() } // Empty list initially
 
-    if (chatItems.isEmpty()) {
-        // No chats available
+@Composable
+fun ChatsScreen(contactList: List<Contact>) {
+    if (contactList.isEmpty()) {
+        // No contacts available
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -167,13 +186,12 @@ fun ChatsScreen() {
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize()
         ) {
-            items(chatItems.size) { index ->
-                ChatItem(name = chatItems[index])
+            items(contactList) { contact ->
+                ChatItem(name = contact.name)
             }
         }
     }
 }
-
 
 @Composable
 fun TranslateScreen() {
@@ -187,35 +205,90 @@ fun TranslateScreen() {
 
 @Composable
 fun SettingsScreen() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Text("Settings Screen", style = MaterialTheme.typography.titleLarge)
-    }
-}
-
-@Composable
-fun ChatList() {
-    val chatItems = remember { listOf("Friend 1", "Friend 2", "Group Chat", "Friend 3") }
+    val settingsOptions = listOf(
+        "Account" to listOf("Security notifications", "Change number"),
+        "Privacy" to listOf("Block contacts", "Disappearing messages"),
+        "Notifications" to listOf("Message alerts", "Group alerts")
+    )
 
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.fillMaxSize()
     ) {
-        items(chatItems.size) { index ->
-            ChatItem(name = chatItems[index])
+        settingsOptions.forEach { (category, options) ->
+            // Category Header
+            item {
+                Text(
+                    text = category,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+
+            // Options under the category
+            items(options) { option ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { /* Handle click for specific settings */ },
+                    elevation = CardDefaults.cardElevation(4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = option,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                }
+            }
         }
     }
 }
 
+
+
+
 @Composable
-fun ChatItem(name: String) {
+fun BottomNavigationBar(selectedTab: Int, onTabSelected: (Int) -> Unit) {
+    NavigationBar {
+        NavigationBarItem(
+            icon = { Icon(Icons.Default.Chat, contentDescription = "Chats") },
+            label = { Text("Chats") },
+            selected = selectedTab == 0,
+            onClick = { onTabSelected(0) }
+        )
+        NavigationBarItem(
+            icon = { Icon(Icons.Default.Translate, contentDescription = "Translate") },
+            label = { Text("Translate") },
+            selected = selectedTab == 1,
+            onClick = { onTabSelected(1) }
+        )
+        NavigationBarItem(
+            icon = { Icon(Icons.Default.PersonAdd, contentDescription = "Add Contact") },
+            label = { Text("Add Contact") },
+            selected = selectedTab == 2,
+            onClick = { onTabSelected(2) }
+        )
+        NavigationBarItem(
+            icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+            label = { Text("Settings") },
+            selected = selectedTab == 3,
+            onClick = { onTabSelected(3) }
+        )
+    }
+}
+
+@Composable
+fun ContactCard(name: String, phoneNumber: String) {
     Card(
         modifier = Modifier
-            .fillMaxWidth()
-            .clickable { /* Navigate to Chat Detail */ },
+            .fillMaxWidth(),
         elevation = CardDefaults.cardElevation(4.dp)
     ) {
         Row(
@@ -223,31 +296,46 @@ fun ChatItem(name: String) {
             modifier = Modifier.padding(16.dp)
         ) {
             Icon(
-                imageVector = Icons.Default.Chat,
-                contentDescription = "Chat Icon",
+                imageVector = Icons.Default.PersonAdd,
+                contentDescription = "Contact Icon",
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(40.dp)
             )
 
             Spacer(modifier = Modifier.width(16.dp))
 
-            Text(
-                text = name,
-                style = MaterialTheme.typography.titleMedium
-            )
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // Display the name of the contact
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.titleMedium
+                )
+
+                // Display the phone number
+                Text(
+                    text = phoneNumber,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
 
+
+
+
+
+
 @Composable
-fun AddContactScreen() {
+fun AddContactScreen(database: AppDatabase, onContactAdded: (Contact) -> Unit) {
     var contactName by remember { mutableStateOf("") }
-    var countryCode by remember { mutableStateOf("+1") } // Default country code
+    var countryCode by remember { mutableStateOf("+1") }
     var phoneNumber by remember { mutableStateOf("") }
-    val contactsList = remember { mutableStateListOf<Pair<String, String>>() }
+    val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-    val coroutineScope = rememberCoroutineScope() // CoroutineScope for launching snackbar
-    val countryCodes = listOf("+1", "+91", "+44", "+61", "+81") // Add more country codes as needed
 
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
@@ -279,25 +367,20 @@ fun AddContactScreen() {
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // Dropdown for country code
                 var expanded by remember { mutableStateOf(false) }
-                Box(
-                    modifier = Modifier
-                        .weight(0.3f) // Explicit weight for the Box
-                ) {
+                Box(modifier = Modifier.weight(0.3f)) {
                     OutlinedTextField(
                         value = countryCode,
                         onValueChange = {},
                         label = { Text("Country Code") },
                         enabled = false,
-                        modifier = Modifier
-                            .clickable { expanded = true }
+                        modifier = Modifier.clickable { expanded = true }
                     )
                     DropdownMenu(
                         expanded = expanded,
                         onDismissRequest = { expanded = false }
                     ) {
-                        countryCodes.forEach { code ->
+                        listOf("+1", "+91", "+44", "+61", "+81").forEach { code ->
                             DropdownMenuItem(
                                 text = { Text(code) },
                                 onClick = {
@@ -311,37 +394,34 @@ fun AddContactScreen() {
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Phone number field
                 OutlinedTextField(
                     value = phoneNumber,
                     onValueChange = { phoneNumber = it },
                     label = { Text("Phone Number") },
-                    modifier = Modifier.weight(0.7f) // Explicit weight for the OutlinedTextField
+                    modifier = Modifier.weight(0.7f)
                 )
             }
-
 
             Spacer(modifier = Modifier.height(16.dp))
 
             Button(
                 onClick = {
                     if (contactName.isBlank() || phoneNumber.isBlank()) {
-                        // Show Snackbar when fields are empty
                         coroutineScope.launch {
                             snackbarHostState.showSnackbar("Please fill in both fields.")
                         }
-                    } else if (contactsList.any { it.second == "$countryCode $phoneNumber" }) {
-                        // Show Snackbar when phone number already exists
-                        coroutineScope.launch {
-                            snackbarHostState.showSnackbar("Contact with this phone number already exists.")
-                        }
                     } else {
-                        // Add new contact and show success Snackbar
-                        contactsList.add(Pair(contactName, "$countryCode $phoneNumber"))
                         coroutineScope.launch {
+                            // Insert the new contact
+                            val newContact = Contact(
+                                name = contactName,
+                                phoneNumber = "$countryCode $phoneNumber"
+                            )
+                            database.contactDao().insertContact(newContact)
+                            onContactAdded(newContact) // Update the contact list
                             snackbarHostState.showSnackbar("Contact added successfully!")
                         }
-                        // Reset the text fields
+                        // Reset input fields
                         contactName = ""
                         phoneNumber = ""
                     }
@@ -349,78 +429,6 @@ fun AddContactScreen() {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Add Contact")
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text(
-                text = "Your Contacts",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.align(Alignment.Start)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (contactsList.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(top = 16.dp),
-                    contentAlignment = Alignment.TopCenter
-                ) {
-                    Text(
-                        text = "No contacts added yet.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(contactsList.size) { index ->
-                        ContactCard(name = contactsList[index].first, email = contactsList[index].second)
-                    }
-                }
-            }
-        }
-    }
-}
-
-
-@Composable
-fun ContactCard(name: String, email: String) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(4.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.PersonAdd,
-                contentDescription = "Contact Icon",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(40.dp)
-            )
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column {
-                Text(
-                    text = name,
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    text = email,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }
