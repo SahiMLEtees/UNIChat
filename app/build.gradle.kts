@@ -102,6 +102,7 @@ dependencies {
 
         // optional - Paging 3 Integration
         implementation(libs.androidx.room.paging)
+        implementation ("com.google.firebase:firebase-firestore:25.1.1")
     }
 
 

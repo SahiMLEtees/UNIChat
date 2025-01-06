@@ -25,24 +25,26 @@ import com.example.unichat.data.entities.Contact
 import com.example.unichat.ui.theme.UNIChatTheme
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
+import com.google.firebase.firestore.FirebaseFirestore
 
 class HomeActivity : ComponentActivity() {
     private lateinit var auth: FirebaseAuth
     private lateinit var database: AppDatabase
+    private val firestore by lazy { FirebaseFirestore.getInstance() } // Firestore initialization
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         auth = FirebaseAuth.getInstance()
-        database = AppDatabase.getDatabase(this) // Initialize Room database
+        database = AppDatabase.getDatabase(this)
 
         setContent {
             UNIChatTheme {
                 var contactList by remember { mutableStateOf<List<Contact>>(emptyList()) }
 
-                // Load contacts from the database when the app starts
+                // Load contacts from Room
                 LaunchedEffect(Unit) {
                     contactList = database.contactDao().getAllContacts()
-                    Log.d("HomeActivity", "Loaded contacts: $contactList") // Log the contacts to verify
+                    Log.d("HomeActivity", "Loaded contacts: $contactList")
                 }
 
                 HomeScreen(
@@ -51,9 +53,10 @@ class HomeActivity : ComponentActivity() {
                         finish()
                     },
                     database = database,
+                    firestore = firestore, // Pass Firestore to the HomeScreen
                     contactList = contactList,
                     onContactAdded = { newContact ->
-                        contactList = contactList + newContact // Update the list when a contact is added
+                        contactList = contactList + newContact
                     }
                 )
             }
@@ -67,8 +70,9 @@ class HomeActivity : ComponentActivity() {
 fun HomeScreen(
     onLogout: () -> Unit,
     database: AppDatabase,
+    firestore: FirebaseFirestore, // Firestore parameter added
     contactList: List<Contact>,
-    onContactAdded: (Contact) -> Unit // This function will be used to update the contact list
+    onContactAdded: (Contact) -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
 
@@ -95,14 +99,15 @@ fun HomeScreen(
     ) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding)) {
             when (selectedTab) {
-                0 -> ChatsScreen(contactList) // Pass the contact list to the ChatsScreen
+                0 -> ChatsScreen(contactList, firestore) // Pass Firestore to ChatsScreen
                 1 -> TranslateScreen()
-                2 -> AddContactScreen(database, onContactAdded) // Pass onContactAdded callback to AddContactScreen
+                2 -> AddContactScreen(database, firestore, onContactAdded) // Pass Firestore to AddContactScreen
                 3 -> SettingsScreen()
             }
         }
     }
 }
+
 
 @Composable
 fun ChatItem(name: String) {
@@ -135,63 +140,52 @@ fun ChatItem(name: String) {
 
 
 @Composable
-fun ChatsScreen(contactList: List<Contact>) {
-    if (contactList.isEmpty()) {
-        // No contacts available
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Chat,
-                    contentDescription = "No Chats",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(100.dp)
-                )
+fun ChatsScreen(contactList: List<Contact>, firestore: FirebaseFirestore) {
+    var firestoreContacts by remember { mutableStateOf<List<Contact>>(emptyList()) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(
-                    text = "No chats yet",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Start a new chat or add a contact to begin.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Button(onClick = { /* Navigate to Add Contact or Start Chat */ }) {
-                    Text("Start a New Chat")
+    LaunchedEffect(Unit) {
+        firestore.collection("contacts")
+            .get()
+            .addOnSuccessListener { documents ->
+                val contactsFromFirestore = documents.mapNotNull { doc ->
+                    val name = doc.getString("name")
+                    val phoneNumber = doc.getString("phoneNumber")
+                    if (name != null && phoneNumber != null) {
+                        Contact(name = name, phoneNumber = phoneNumber)
+                    } else null
+                }
+                firestoreContacts = contactsFromFirestore
+            }
+            .addOnFailureListener { e ->
+                Log.e("Firestore", "Error fetching contacts", e)
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("Failed to fetch contacts from Firestore.")
                 }
             }
-        }
-    } else {
-        // Show chat items
+    }
+
+    val allContacts = (contactList + firestoreContacts).distinctBy { it.phoneNumber }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+    ) { innerPadding ->
         LazyColumn(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
         ) {
-            items(contactList) { contact ->
+            items(allContacts) { contact ->
                 ChatItem(name = contact.name)
             }
         }
     }
 }
+
+
 
 @Composable
 fun TranslateScreen() {
@@ -330,7 +324,11 @@ fun ContactCard(name: String, phoneNumber: String) {
 
 
 @Composable
-fun AddContactScreen(database: AppDatabase, onContactAdded: (Contact) -> Unit) {
+fun AddContactScreen(
+    database: AppDatabase,
+    firestore: FirebaseFirestore,
+    onContactAdded: (Contact) -> Unit
+) {
     var contactName by remember { mutableStateOf("") }
     var countryCode by remember { mutableStateOf("+1") }
     var phoneNumber by remember { mutableStateOf("") }
@@ -348,11 +346,7 @@ fun AddContactScreen(database: AppDatabase, onContactAdded: (Contact) -> Unit) {
             verticalArrangement = Arrangement.Top,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = "Add Contact",
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
+            Text("Add Contact", style = MaterialTheme.typography.titleLarge)
 
             OutlinedTextField(
                 value = contactName,
@@ -364,33 +358,16 @@ fun AddContactScreen(database: AppDatabase, onContactAdded: (Contact) -> Unit) {
             Spacer(modifier = Modifier.height(8.dp))
 
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                var expanded by remember { mutableStateOf(false) }
-                Box(modifier = Modifier.weight(0.3f)) {
-                    OutlinedTextField(
-                        value = countryCode,
-                        onValueChange = {},
-                        label = { Text("Country Code") },
-                        enabled = false,
-                        modifier = Modifier.clickable { expanded = true }
-                    )
-                    DropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
-                    ) {
-                        listOf("+1", "+91", "+44", "+61", "+81").forEach { code ->
-                            DropdownMenuItem(
-                                text = { Text(code) },
-                                onClick = {
-                                    countryCode = code
-                                    expanded = false
-                                }
-                            )
-                        }
-                    }
-                }
+                OutlinedTextField(
+                    value = countryCode,
+                    onValueChange = {},
+                    label = { Text("Country Code") },
+                    enabled = false,
+                    modifier = Modifier.weight(0.3f).clickable { /* Dropdown logic */ }
+                )
 
                 Spacer(modifier = Modifier.width(8.dp))
 
@@ -412,16 +389,29 @@ fun AddContactScreen(database: AppDatabase, onContactAdded: (Contact) -> Unit) {
                         }
                     } else {
                         coroutineScope.launch {
-                            // Insert the new contact
                             val newContact = Contact(
                                 name = contactName,
                                 phoneNumber = "$countryCode $phoneNumber"
                             )
                             database.contactDao().insertContact(newContact)
-                            onContactAdded(newContact) // Update the contact list
+                            onContactAdded(newContact)
+
+                            // Save to Firestore
+                            firestore.collection("contacts")
+                                .add(mapOf(
+                                    "name" to contactName,
+                                    "phoneNumber" to "$countryCode $phoneNumber"
+                                ))
+                                .addOnSuccessListener {
+                                    Log.d("Firestore", "Contact added to Firestore")
+                                }
+                                .addOnFailureListener { e ->
+                                    Log.e("Firestore", "Error adding contact", e)
+                                }
+
                             snackbarHostState.showSnackbar("Contact added successfully!")
                         }
-                        // Reset input fields
+
                         contactName = ""
                         phoneNumber = ""
                     }
@@ -433,3 +423,4 @@ fun AddContactScreen(database: AppDatabase, onContactAdded: (Contact) -> Unit) {
         }
     }
 }
+
