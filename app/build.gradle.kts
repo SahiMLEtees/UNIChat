@@ -102,6 +102,8 @@ dependencies {
 
         // optional - Paging 3 Integration
         implementation(libs.androidx.room.paging)
+        implementation ("androidx.navigation:navigation-compose:2.8.5")
+
         implementation ("com.google.firebase:firebase-firestore:25.1.1")
     }
 
